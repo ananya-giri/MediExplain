@@ -1,6 +1,10 @@
 from motor.motor_asyncio import AsyncIOMotorClient
+import os
+from dotenv import load_dotenv
 
-MONGO_URI = "mongodb+srv://user:123@cluster0.bwbgvha.mongodb.net/?appName=Cluster0"
+load_dotenv()
+
+MONGO_URI = os.getenv("MONGO_URI")
 
 client = AsyncIOMotorClient(MONGO_URI)
 db = client["mediexplain_db"]  # database name

@@ -27,8 +27,8 @@ export default function Home() {
   const uploadMutation = useMutation({
     mutationFn: uploadFile,
     onSuccess: (data) => {
-      if (!data.extracted_text) {
-        setStatusMessage("❌ Failed to extract text");
+      if (!data.extracted_text || data.extracted_text.startsWith("ERROR:")) {
+        setStatusMessage(data.extracted_text || "❌ Failed to extract text");
         return;
       }
 
