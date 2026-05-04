@@ -1,13 +1,19 @@
 import React, { useState, useRef, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
+import { useMutation } from "@tanstack/react-query";
+import { chatAboutReport, transcribeAudio } from "../services/api";
 
 const ChatBox = ({ reportText }) => {
   const [question, setQuestion] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [tone, setTone] = useState("detailed"); // 🩺 Default tone
   const [language, setLanguage] = useState("English"); // 🌍 Default language
   const chatEndRef = useRef(null);
+
+  // ASR State
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   // ✅ Persistent User ID across sessions
   const [userId] = useState(() => {
@@ -19,10 +25,40 @@ const ChatBox = ({ reportText }) => {
     return storedId;
   });
 
-  // 🎤 Speech Recognition setup
-  const SpeechRecognition =
-    window.SpeechRecognition || window.webkitSpeechRecognition;
-  const recognition = SpeechRecognition ? new SpeechRecognition() : null;
+  const chatMutation = useMutation({
+    mutationFn: chatAboutReport,
+    onSuccess: (data) => {
+      const aiReply = data.answer_data;
+      if (aiReply && aiReply.sentences) {
+        const fullText = aiReply.sentences.map((s) => s.text).join(" ");
+        const newAIMessage = { sender: "ai", sentences: aiReply.sentences, text: fullText };
+        setChatHistory((prev) => [...prev, newAIMessage]);
+        speak(fullText);
+      } else {
+        const fallbackText = "⚠️ Failed to parse AI response.";
+        setChatHistory((prev) => [...prev, { sender: "ai", text: fallbackText }]);
+        speak(fallbackText);
+      }
+    },
+    onError: (err) => {
+      console.error("Chat Error:", err);
+      setChatHistory((prev) => [
+        ...prev,
+        { sender: "ai", text: "⚠️ Failed to connect to AI service." },
+      ]);
+    }
+  });
+
+  const transcribeMutation = useMutation({
+    mutationFn: transcribeAudio,
+    onSuccess: (data) => {
+      if (data.text) setQuestion(data.text);
+    },
+    onError: (err) => {
+      console.error("Transcription error:", err);
+      alert("Failed to transcribe audio.");
+    }
+  });
 
   // 🔊 Read aloud function
   const speak = (text) => {
@@ -44,29 +80,37 @@ const ChatBox = ({ reportText }) => {
     synth.speak(utter);
   };
 
-  // 🎤 Start voice input
-  const handleVoiceInput = () => {
-    if (!recognition) {
-      alert("Speech recognition not supported in this browser.");
-      return;
+  // 🎤 Start/Stop voice input using MediaRecorder and Whisper ASR
+  const handleVoiceInput = async () => {
+    if (isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+          transcribeMutation.mutate(audioBlob);
+          stream.getTracks().forEach((track) => track.stop());
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+      } catch (err) {
+        alert("Microphone access denied or not available.");
+        console.error(err);
+      }
     }
-
-    recognition.lang =
-      language === "Hindi"
-        ? "hi-IN"
-        : language === "Tamil"
-        ? "ta-IN"
-        : language === "Bengali"
-        ? "bn-IN"
-        : language === "Telugu"
-        ? "te-IN"
-        : "en-IN";
-
-    recognition.start();
-    recognition.onresult = (event) => {
-      const voiceText = event.results[0][0].transcript;
-      setQuestion(voiceText);
-    };
   };
 
   // Auto-scroll to latest message
@@ -75,41 +119,21 @@ const ChatBox = ({ reportText }) => {
   }, [chatHistory]);
 
   // 💬 Send message to backend
-  const handleAsk = async () => {
+  const handleAsk = () => {
     if (!question.trim()) return;
 
     const newUserMessage = { sender: "user", text: question };
     setChatHistory((prev) => [...prev, newUserMessage]);
+    
+    chatMutation.mutate({
+      user_id: userId,
+      report_text: reportText,
+      question,
+      tone,
+      language,
+    });
+    
     setQuestion("");
-    setLoading(true);
-
-    try {
-      const response = await fetch("http://127.0.0.1:8000/api/chat/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: userId,
-          report_text: reportText,
-          question,
-          tone,
-          language,
-        }),
-      });
-
-      const data = await response.json();
-      const aiReply = data.answer || "⚠️ No response received.";
-      const newAIMessage = { sender: "ai", text: aiReply };
-      setChatHistory((prev) => [...prev, newAIMessage]);
-      speak(aiReply); // 🔊 Speak reply
-    } catch (err) {
-      console.error("Chat Error:", err);
-      setChatHistory((prev) => [
-        ...prev,
-        { sender: "ai", text: "⚠️ Failed to connect to AI service." },
-      ]);
-    } finally {
-      setLoading(false);
-    }
   };
 
   return (
@@ -172,7 +196,21 @@ const ChatBox = ({ reportText }) => {
                     : "bg-gray-200 text-gray-800 rounded-bl-none"
                 }`}
               >
-                {msg.text}
+                {msg.sender === "ai" && msg.sentences ? (
+                  msg.sentences.map((sent, idx) => (
+                    <span
+                      key={idx}
+                      className={`inline-block mr-1 p-0.5 rounded cursor-help ${
+                        sent.confidence < 0.85 ? "bg-yellow-300 text-black" : ""
+                      }`}
+                      title={`Confidence: ${(sent.confidence * 100).toFixed(1)}%\nSHAP Keywords: ${sent.shap_keywords?.join(", ")}`}
+                    >
+                      {sent.text}
+                    </span>
+                  ))
+                ) : (
+                  msg.text
+                )}
               </div>
             </div>
           ))
@@ -184,32 +222,32 @@ const ChatBox = ({ reportText }) => {
       <div className="flex gap-2">
         <button
           onClick={handleVoiceInput}
-          className="bg-gray-200 text-gray-700 px-3 py-2 rounded-xl hover:bg-gray-300 transition"
+          className={`px-3 py-2 rounded-xl transition ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
           title="Speak your question"
         >
-          🎤
+          {isRecording ? "🛑" : "🎤"}
         </button>
 
         <input
           type="text"
-          placeholder="Ask about your report..."
+          placeholder={transcribeMutation.isPending ? "Transcribing audio..." : "Ask about your report..."}
           className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAsk()}
-          disabled={loading}
+          disabled={chatMutation.isPending || transcribeMutation.isPending}
         />
 
         <button
           onClick={handleAsk}
-          disabled={loading}
+          disabled={chatMutation.isPending}
           className="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition"
         >
-          {loading ? "Thinking..." : "Send"}
+          {chatMutation.isPending ? "Thinking..." : "Send"}
         </button>
       </div>
 
-      {loading && (
+      {chatMutation.isPending && (
         <p className="text-gray-500 text-sm italic mt-2">
           AI is generating a response...
         </p>

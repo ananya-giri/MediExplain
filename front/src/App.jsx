@@ -39,21 +39,25 @@ const App = () => {
   return (
     <AuthProvider>
       <Router>
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/login" element={<Login />} />
-          <Route
-            path="/home"
-            element={
-              <ProtectedRoute>
-                <Navbar/>
-                <Home />
-              </ProtectedRoute>
-            }
-          />
-          <Route path ="/about" element={<About/>}/>
-        </Routes>
+        <div className="min-h-screen bg-gray-50 flex flex-col">
+          <Navbar />
+          <div className="flex-1">
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/login" element={<Login />} />
+              <Route
+                path="/home"
+                element={
+                  <ProtectedRoute>
+                    <Home />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/about" element={<About />} />
+            </Routes>
+          </div>
+        </div>
       </Router>
     </AuthProvider>
   );

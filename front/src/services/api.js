@@ -1,24 +1,50 @@
 // src/services/api.js
 
-export const explainText = async (text) => {
-  const response = await fetch("http://127.0.0.1:8000/api/explain/", {
+const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
+
+const getAuthHeaders = () => {
+  const token = localStorage.getItem("token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+export const uploadFile = async (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${API_BASE}/upload/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { ...getAuthHeaders() },
+    body: formData,
+  });
+  if (!response.ok) throw new Error("Failed to upload file");
+  return await response.json();
+};
+
+export const explainText = async (text) => {
+  const response = await fetch(`${API_BASE}/explain/`, {
+    method: "POST",
+    headers: { 
+      "Content-Type": "application/json",
+      ...getAuthHeaders() 
+    },
     body: JSON.stringify({ text }),
   });
+  if (!response.ok) throw new Error("Failed to explain text");
   return await response.json();
 };
 
-export const chatAboutReport = async (reportText, question) => {
-  const response = await fetch("http://127.0.0.1:8000/api/chat/", {
+export const chatAboutReport = async (data) => {
+  const response = await fetch(`${API_BASE}/chat/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ report_text: reportText, question }),
+    headers: { 
+      "Content-Type": "application/json",
+      ...getAuthHeaders() 
+    },
+    body: JSON.stringify(data),
   });
+  if (!response.ok) throw new Error("Failed to chat about report");
   return await response.json();
 };
-
-const API_BASE = "http://127.0.0.1:8000/api";
 
 // ✅ Signup
 export const signupUser = async (data) => {
@@ -64,4 +90,17 @@ export const loginUser = async (data) => {
   } catch {
     return { success: false, message: "Network error" };
   }
+};
+
+export const transcribeAudio = async (audioBlob) => {
+  const formData = new FormData();
+  formData.append("file", audioBlob, "audio.webm");
+
+  const response = await fetch(`${API_BASE}/transcribe/`, {
+    method: "POST",
+    headers: { ...getAuthHeaders() },
+    body: formData,
+  });
+  if (!response.ok) throw new Error("Audio transcription failed");
+  return await response.json();
 };

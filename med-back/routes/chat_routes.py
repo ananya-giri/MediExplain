@@ -1,16 +1,15 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Dict, List
 import google.genai as genai
 import os
+from database import chat_history_collection
+from utils.jwt_handler import get_current_user
 
 router = APIRouter()
 
 # Initialize Gemini client
 genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
-# In-memory chat sessions
-chat_sessions: Dict[str, List[Dict[str, str]]] = {}
 
 class ChatRequest(BaseModel):
     user_id: str
@@ -20,12 +19,16 @@ class ChatRequest(BaseModel):
     language: str = "English" 
     
 
-
-
 @router.post("/chat/")
-def chat(req: ChatRequest):
-    user_id = req.user_id
-    history = chat_sessions.get(user_id, [])
+async def chat(req: ChatRequest, current_user: dict = Depends(get_current_user)):
+    user_email = current_user["email"]
+    
+    # Retrieve history from DB
+    user_record = await chat_history_collection.find_one({"email": user_email})
+    if user_record:
+        history = user_record.get("history", [])
+    else:
+        history = []
 
     # Add user's message
     history.append({"role": "user", "content": req.question})
@@ -92,7 +95,13 @@ def chat(req: ChatRequest):
         ai_reply = response.text.strip() if hasattr(response, "text") else "I couldn't generate a response."
 
         history.append({"role": "assistant", "content": ai_reply})
-        chat_sessions[user_id] = history
+        
+        # Save updated history to DB
+        await chat_history_collection.update_one(
+            {"email": user_email},
+            {"$set": {"history": history}},
+            upsert=True
+        )
 
         return {"answer": ai_reply, "history": history}
 

@@ -7,14 +7,15 @@ import bcrypt
 router = APIRouter()
 
 @router.post("/signup")
-def signup(user: UserSignup):
+async def signup(user: UserSignup):
     # Check if user exists
-    if users_collection.find_one({"email": user.email}):
+    existing_user = await users_collection.find_one({"email": user.email})
+    if existing_user:
         raise HTTPException(status_code=400, detail="User already exists")
 
     hashed_pw = bcrypt.hashpw(user.password.encode(), bcrypt.gensalt())
 
-    users_collection.insert_one({
+    await users_collection.insert_one({
         "name": user.name,
         "email": user.email,
         "password": hashed_pw.decode()
@@ -23,10 +24,10 @@ def signup(user: UserSignup):
     return {"message": "✅ Signup successful, please login"}
 
 @router.post("/login")
-def login(user: UserLogin):
-    user_in_db = users_collection.find_one({"email": user.email})
+async def login(user: UserLogin):
+    user_in_db = await users_collection.find_one({"email": user.email})
     if not user_in_db:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=404, detail="User not found")
 
     if not bcrypt.checkpw(user.password.encode(), user_in_db["password"].encode()):
         raise HTTPException(status_code=401, detail="Invalid credentials")

@@ -1,0 +1,20 @@
+# Python
+med-back/venv/
+med-back/__pycache__/
+med-back/*.pyc
+med-back/.env
+
+# Node
+front/node_modules/
+front/dist/
+front/.env
+front/.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+.vscode/
+.idea/
+*.log
