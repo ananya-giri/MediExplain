@@ -4,10 +4,7 @@ import os
 import re
 import json
 import datetime
-from presidio_analyzer import AnalyzerEngine
-from presidio_anonymizer import AnonymizerEngine
-import chromadb
-from database import biometrics_history_collection, prescriptions_collection, reports_history_collection, reports_history_collection
+from database import biometrics_history_collection, prescriptions_collection, reports_history_collection
 import groq
 
 load_dotenv()
@@ -33,14 +30,13 @@ def check_safety_guardrails(text: str, role: str = "user") -> bool:
         print("Llama Guard Error:", e)
         return True # Fail-open to avoid blocking the user if Groq is down
 
-# 1. Privacy-Preserving Local Anonymization (HIPAA Compliance)
-analyzer = AnalyzerEngine()
-anonymizer = AnonymizerEngine()
-
+# 1. Privacy-Preserving Local Anonymization (HIPAA Compliance) - Lightweight Mock
 def anonymize_text(text: str) -> str:
-    results = analyzer.analyze(text=text, entities=["PERSON", "PHONE_NUMBER", "EMAIL_ADDRESS", "LOCATION", "DATE_TIME"], language='en')
-    anonymized_text = anonymizer.anonymize(text=text, analyzer_results=results)
-    return anonymized_text.text
+    # Regex mock for presidio to save RAM
+    text = re.sub(r'\b\d{3}-\d{2}-\d{4}\b', '[REDACTED SSN]', text)
+    text = re.sub(r'\b\d{10}\b', '[REDACTED PHONE]', text)
+    text = re.sub(r'\S+@\S+', '[REDACTED EMAIL]', text)
+    return text
 
 # 2. Hybrid Neuro-Symbolic Verification
 def apply_symbolic_rules(text: str) -> str:
@@ -108,43 +104,29 @@ async def extract_and_store_biometrics(user_email: str, text: str) -> str:
     return "Temporal Trend Analysis:\n" + "\n".join(delta_report)
 
 # 4. Multi-Modal Grounding with RAG (Literature & Personal Prescription History)
-chroma_client = chromadb.Client()
-literature_collection = chroma_client.create_collection(name="medical_knowledge")
-prescription_collection = chroma_client.create_collection(name="patient_prescriptions")
-
-# Mock Medical Literature (Global)
-literature_base = [
-    "Anemia is often indicated by a low hemoglobin level. It can cause fatigue and weakness.",
-    "Normal hemoglobin ranges are generally 13.8 to 17.2 grams per deciliter (g/dL) for men and 12.1 to 15.1 g/dL for women.",
-    "Hyperglycemia, or high blood glucose, occurs when there is too much sugar in the blood. This is a common indicator of diabetes.",
-    "A normal fasting blood glucose level is lower than 100 mg/dL."
-]
-literature_collection.add(
-    documents=literature_base,
-    metadatas=[{"source": "PubMed 1"}, {"source": "PubMed 2"}, {"source": "PubMed 3"}, {"source": "PubMed 4"}],
-    ids=["id1", "id2", "id3", "id4"]
-)
-
-# Mock Prescription History (Personalized for the patient)
-# In production, this would be fetched from MongoDB on login and embedded per user session.
-prescription_history = [
-    "Patient takes Metformin 500mg twice daily for Type 2 Diabetes Management.",
-    "Patient takes Lisinopril 10mg once daily for Hypertension.",
-    "Patient was prescribed Iron Supplements (Ferrous Sulfate 325mg) in January due to low Hemoglobin.",
-    "Patient is allergic to Penicillin."
-]
-prescription_collection.add(
-    documents=prescription_history,
-    metadatas=[{"type": "Medication"}, {"type": "Medication"}, {"type": "Supplement"}, {"type": "Allergy"}],
-    ids=["rx1", "rx2", "rx3", "rx4"]
-)
+# Lightweight Mock for ChromaDB
 
 def retrieve_knowledge(query: str, collection_type: str = "literature") -> str:
-    collection = literature_collection if collection_type == "literature" else prescription_collection
-    results = collection.query(query_texts=[query], n_results=2)
+    # Instead of running sentence-transformers and chromadb (which crashes 512MB free tier),
+    # we return a static mock that simulates retrieval based on keywords.
+    query_lower = query.lower()
     retrieved = []
-    for doc in results['documents'][0]:
-        retrieved.append(f"- {doc}")
+    
+    if collection_type == "literature":
+        if "hemoglobin" in query_lower or "anemia" in query_lower:
+            retrieved.append("- Anemia is often indicated by a low hemoglobin level. It can cause fatigue.")
+        if "glucose" in query_lower or "sugar" in query_lower:
+            retrieved.append("- Hyperglycemia occurs when there is too much sugar in the blood.")
+        if not retrieved:
+            retrieved.append("- Normal ranges vary by individual; consult a physician.")
+    else:
+        if "diabetes" in query_lower or "glucose" in query_lower:
+            retrieved.append("- Patient takes Metformin 500mg twice daily.")
+        if "blood pressure" in query_lower or "hypertension" in query_lower:
+            retrieved.append("- Patient takes Lisinopril 10mg once daily.")
+        if not retrieved:
+            retrieved.append("- No immediate conflicting prescriptions found.")
+            
     return "\n".join(retrieved)
 
 

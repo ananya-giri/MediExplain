@@ -1,42 +1,24 @@
-import spacy
-import warnings
-
-warnings.filterwarnings('ignore')
-
-# Load the SciSpaCy model for medical entity extraction
-try:
-    nlp_sci = spacy.load("en_core_sci_sm")
-except Exception as e:
-    print("SciSpacy model not found. Falling back to default.")
-    nlp_sci = None
+import re
 
 def extract_medical_entities(text: str):
     """
-    Extracts structured medical entities (Diseases, Chemicals, Symptoms) 
-    using SciSpaCy NLP pipeline.
+    Mocked Medical Entity Extractor. 
+    Replaces SciSpaCy to save 1GB of RAM for free-tier hosting.
+    Uses regex to find capitalized medical-looking terms.
     """
-    if not nlp_sci:
-        return []
-        
-    try:
-        # Keep text length manageable
-        doc = nlp_sci(text[:2000])
-        entities = []
-        seen = set()
-        
-        for ent in doc.ents:
-            clean_text = ent.text.lower().strip()
-            # Filter out generic short words
-            if len(clean_text) > 3 and clean_text not in seen:
-                entities.append({
-                    "entity": clean_text,
-                    # Mock mapping to an ICD/UMLS code format for demonstration
-                    "mock_code": f"UMLS-{abs(hash(clean_text)) % 10000:04d}"
-                })
-                seen.add(clean_text)
-                
-        # Return top 5 entities to keep the UI clean
-        return entities[:5]
-    except Exception as e:
-        print(f"Entity Extraction Error: {e}")
-        return []
+    entities = []
+    seen = set()
+    
+    # Find words with 5+ letters that are capitalized, likely entities in medical text
+    matches = re.findall(r'\b[A-Z][a-z]{4,}\b', text)
+    
+    for match in matches:
+        clean_text = match.lower().strip()
+        if clean_text not in seen and clean_text not in ['patient', 'doctor', 'report']:
+            entities.append({
+                "entity": clean_text,
+                "mock_code": f"UMLS-{abs(hash(clean_text)) % 10000:04d}"
+            })
+            seen.add(clean_text)
+            
+    return entities[:5]
