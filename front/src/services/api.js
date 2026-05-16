@@ -104,3 +104,21 @@ export const transcribeAudio = async (audioBlob) => {
   if (!response.ok) throw new Error("Audio transcription failed");
   return await response.json();
 };
+
+export const getHistory = async () => {
+  const response = await fetch(`${API_BASE}/history/`, {
+    method: "GET",
+    headers: { ...getAuthHeaders() },
+  });
+  if (!response.ok) throw new Error("Failed to fetch history");
+  return await response.json();
+};
+
+export const deleteHistory = async (reportId) => {
+  const response = await fetch(`${API_BASE}/history/${reportId}`, {
+    method: "DELETE",
+    headers: { ...getAuthHeaders() },
+  });
+  if (!response.ok) throw new Error("Failed to delete history");
+  return await response.json();
+};

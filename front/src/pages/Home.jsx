@@ -33,10 +33,7 @@ export default function Home() {
       }
 
       setOriginalText(data.extracted_text);
-      setStatusMessage("📄 Extracted Text. 🧠 Generating neuro-symbolic explanation...");
-
-      // Trigger explain mutation
-      explainMutation.mutate(data.extracted_text);
+      setStatusMessage("📄 Extracted Text. Click 'Explain' to generate the medical analysis.");
     },
     onError: (err) => {
       setStatusMessage("⚠️ Error uploading file: " + err.message);
@@ -64,7 +61,25 @@ export default function Home() {
         )}
 
         {/* Extracted Original Report */}
-        <ResultCard text={originalText} />
+        {originalText && <ResultCard text={originalText} />}
+
+        {/* Explain Button */}
+        {originalText && !explanationData && (
+          <div className="flex justify-center mt-6">
+            <button
+              onClick={() => {
+                setStatusMessage("🧠 Generating neuro-symbolic explanation...");
+                explainMutation.mutate(originalText);
+              }}
+              disabled={explainMutation.isPending}
+              className={`font-semibold py-3 px-8 rounded-full shadow-lg transition-transform transform hover:scale-105 ${
+                explainMutation.isPending ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 text-white"
+              }`}
+            >
+              {explainMutation.isPending ? "Processing..." : "Explain"}
+            </button>
+          </div>
+        )}
 
         {/* XAI Explanation Section */}
         {explanationData && explanationData.sentences && (

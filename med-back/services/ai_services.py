@@ -1,4 +1,4 @@
-import google.generativeai as genai
+from google import genai
 from dotenv import load_dotenv
 import os
 import re
@@ -7,26 +7,31 @@ import datetime
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
 import chromadb
-from database import biometrics_history_collection, prescriptions_collection
+from database import biometrics_history_collection, prescriptions_collection, reports_history_collection, reports_history_collection
 import groq
 
 load_dotenv()
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 groq_client = groq.Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# 0. Llama-Guard 3 Safety Guardrails
+# 0. Llama-Guard 3 Safety Guardrails (Updated for Groq compatibility)
 def check_safety_guardrails(text: str, role: str = "user") -> bool:
     try:
+        # Truncate to first 4000 characters to avoid "Request too large" errors on Groq
+        safe_check_text = text[:4000]
         response = groq_client.chat.completions.create(
-            model="llama-guard-3-8b",
-            messages=[{"role": role, "content": text}]
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": "You are a medical safety filter. Respond ONLY with 'safe' if the content is a harmless medical report or question, or 'unsafe' if it contains hate speech, violence, or dangerous non-medical advice."},
+                {"role": "user", "content": safe_check_text}
+            ]
         )
         verdict = response.choices[0].message.content.strip().lower()
         return "safe" in verdict
     except Exception as e:
         print("Llama Guard Error:", e)
-        return True # Fail-open
+        return True # Fail-open to avoid blocking the user if Groq is down
 
 # 1. Privacy-Preserving Local Anonymization (HIPAA Compliance)
 analyzer = AnalyzerEngine()
@@ -159,6 +164,13 @@ async def simplify_medical_text(raw_text: str, user_email: str) -> dict:
     retrieved_facts = retrieve_knowledge(query_text, "literature")
     retrieved_prescriptions = retrieve_knowledge(query_text, "prescription")
 
+    # 3. Retrieve User's Past Reports
+    past_reports_cursor = reports_history_collection.find({"email": user_email}).sort("date", -1).limit(3)
+    past_reports = []
+    async for doc in past_reports_cursor:
+        past_reports.append(doc.get("report_text", "")[:500])
+    past_reports_context = "\n".join(past_reports) if past_reports else "No previous reports found."
+
     # 🏥 NLP Ontology Extraction (SciSpaCy)
     structured_entities = extract_medical_entities(safe_text)
 
@@ -179,6 +191,9 @@ async def simplify_medical_text(raw_text: str, user_email: str) -> dict:
     
     PATIENT PRESCRIPTION HISTORY RAG:
     {retrieved_prescriptions}
+    
+    PATIENT PAST REPORTS RAG:
+    {past_reports_context}
 
     YOUR TASK:
     1. Simplify the medical report into clear, colloquial analogies suitable for low-resource environments. Keep sentences short.
@@ -199,10 +214,14 @@ async def simplify_medical_text(raw_text: str, user_email: str) -> dict:
     }}
     """
     
-    model = genai.GenerativeModel("gemini-2.5-flash")
-    response = model.generate_content(prompt)
+    response = None
     try:
-        json_str = response.text.strip()
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        json_str = response.choices[0].message.content.strip()
         if json_str.startswith("```json"): json_str = json_str[7:]
         if json_str.endswith("```"): json_str = json_str[:-3]
         data = json.loads(json_str.strip())
@@ -217,9 +236,10 @@ async def simplify_medical_text(raw_text: str, user_email: str) -> dict:
                 
         return data
     except Exception as e:
-        return {"error": f"Failed to parse JSON: {str(e)}", "raw": response.text}
+        print(f"🔥 AI API Error: {str(e)}")
+        return {"error": f"AI Generation Failed: {str(e)}", "raw": str(e)}
 
-async def chat_about_report(report_text: str, user_question: str, user_email: str) -> dict:
+async def chat_about_report(report_text: str, user_question: str, user_email: str, tone: str = "detailed", language: str = "English") -> dict:
     if not check_safety_guardrails(user_question):
         return {"error": "Llama-Guard-3 flagged this question as unsafe or a policy violation."}
 
@@ -230,6 +250,13 @@ async def chat_about_report(report_text: str, user_question: str, user_email: st
         
         retrieved_facts = retrieve_knowledge(user_question, "literature")
         retrieved_prescriptions = retrieve_knowledge(user_question, "prescription")
+        
+        # Retrieve User's Past Reports
+        past_reports_cursor = reports_history_collection.find({"email": user_email}).sort("date", -1).limit(3)
+        past_reports = []
+        async for doc in past_reports_cursor:
+            past_reports.append(doc.get("report_text", "")[:500])
+        past_reports_context = "\n".join(past_reports) if past_reports else "No previous reports found."
 
         prompt = f"""
         You are a medical explanation assistant.
@@ -249,6 +276,9 @@ async def chat_about_report(report_text: str, user_question: str, user_email: st
         
         PATIENT PRESCRIPTION HISTORY RAG:
         {retrieved_prescriptions}
+        
+        PATIENT PAST REPORTS RAG:
+        {past_reports_context}
 
         User's Question:
         {user_question}
@@ -256,6 +286,8 @@ async def chat_about_report(report_text: str, user_question: str, user_email: st
         YOUR TASK:
         - Answer in clear, colloquial analogies.
         - Cross-reference their question with their active Prescription History.
+        - Tone Preference: {tone} (e.g. if child-friendly, use gentle and extremely simple language)
+        - Target Language: YOU MUST RESPOND ENTIRELY IN {language}. If {language} is Hindi, respond entirely in Hindi text. DO NOT reply in English if {language} is not English.
         - UNCERTAINTY QUANTIFICATION: Break your response down sentence by sentence. Provide confidence (0-1).
         - Output strictly valid JSON.
         
@@ -268,20 +300,26 @@ async def chat_about_report(report_text: str, user_question: str, user_email: st
         }}
         """
 
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
-
-        json_str = response.text.strip()
-        if json_str.startswith("```json"): json_str = json_str[7:]
-        if json_str.endswith("```"): json_str = json_str[:-3]
-        data = json.loads(json_str.strip())
-        
-        # 🧪 Apply TRUE SHAP Feature Attribution locally
-        if "sentences" in data:
-            for sent in data["sentences"]:
-                sent["shap_keywords"] = get_true_shap_keywords(sent.get("text", ""))
-                
-        return data
+        response = None
+        try:
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
+            )
+            json_str = response.choices[0].message.content.strip()
+            if json_str.startswith("```json"): json_str = json_str[7:]
+            if json_str.endswith("```"): json_str = json_str[:-3]
+            data = json.loads(json_str.strip())
+            
+            # 🧪 Apply TRUE SHAP Feature Attribution locally
+            if "sentences" in data:
+                for sent in data["sentences"]:
+                    sent["shap_keywords"] = get_true_shap_keywords(sent.get("text", ""))
+                    
+            return data
+        except Exception as e:
+            raise e
 
     except Exception as e:
         print(f"🔥 Error in chat_about_report: {e}")

@@ -17,10 +17,11 @@ Unlike standard LLMs that are prone to hallucinations, MediExplain utilizes a **
 ### 📈 2. Longitudinal Temporal Reasoning
 MediExplain doesn't just analyze a single report; it builds a **Temporal Knowledge Graph** of the patient's health. By tracking biometrics over time, it provides trend-aware insights (e.g., *"Your hemoglobin has dropped by 1.2g/dL since last month"*), enabling preventive care.
 
-### 🔬 3. Personalized RAG (P-RAG)
+### 🔬 3. Personalized RAG (P-RAG) & Historical Memory
 Our proprietary **Dual-Retrieval Augmented Generation** pipeline fetches context from:
-- **Global Medical Literature:** Grounding answers in verified PubMed-style knowledge.
+- **Global Medical Literature (ChromaDB):** Grounding answers in verified PubMed-style knowledge.
 - **Patient Prescription History:** Automatically cross-referencing diagnostic findings with active medications to warn about potential adverse drug-condition interactions.
+- **Longitudinal Patient History (MongoDB):** The RAG pipeline automatically retrieves the patient's past uploaded reports, allowing the AI to construct highly personalized, trend-aware responses.
 
 ### 🛡️ 4. Enterprise-Grade Security & Safety
 - **Llama-Guard-3 Integration:** Every input and output is screened by Meta's Llama-Guard-3 to ensure medical safety and policy compliance.
@@ -30,18 +31,19 @@ Our proprietary **Dual-Retrieval Augmented Generation** pipeline fetches context
 - **Local SHAP Attribution:** Uses mathematically derived SHAP (SHapley Additive exPlanations) values via a local Transformer model to provide true feature attribution for every sentence.
 - **Uncertainty Quantification:** Highlighting assertions where AI confidence is <85% to ensure clinical transparency.
 
-### 🎙️ 6. Multimodal Accessibility
+### 🎙️ 6. Multimodal Accessibility & Advanced OCR
 - **Whisper ASR:** Multi-lingual voice input support for rural and low-resource accessibility.
+- **Enhanced Tesseract Pipeline:** Custom OpenCV upscaling with PSM-6 alignment to flawlessly read tabular medical data and tiny fonts.
 - **SciSpaCy Ontology Mapping:** Automated linking of raw text to standard clinical ontologies (UMLS/ICD-10).
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Frontend:** React.js, Vite, TanStack Query, Tailwind CSS, Framer Motion.
+- **Frontend:** React.js, Vite, TanStack Query, Tailwind CSS, Framer Motion, Lucide React.
 - **Backend:** FastAPI, Motor (Async MongoDB), Uvicorn.
-- **AI/ML:** Google Gemini 1.5 Flash, Meta Llama-Guard-3 (via Groq), OpenAI Whisper-v3.
-- **NLP Libraries:** SciSpaCy, Microsoft Presidio, Spacy, Transformers, SHAP, ChromaDB.
+- **AI/ML:** Llama 3.3 70B (via Groq), Meta Llama-Guard-3 (via Groq), OpenAI Whisper-Large-v3.
+- **NLP Libraries:** SciSpaCy, Microsoft Presidio, Spacy, Transformers, SHAP, ChromaDB, OpenCV, Tesseract OCR.
 
 ---
 
