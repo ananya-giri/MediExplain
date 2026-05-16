@@ -5,6 +5,9 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688.svg)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-18-61DAFB.svg)](https://reactjs.org/)
 
+**🌍 Live Web App:** [https://medi-explain-pied.vercel.app/](https://medi-explain-pied.vercel.app/)  
+**⚙️ Live API Backend:** [https://mediexplain-a9wb.onrender.com](https://mediexplain-a9wb.onrender.com)
+
 **MediExplain** is an advanced, production-ready medical platform designed to bridge the gap between complex diagnostic reports and patient understanding. Built for academic rigour and clinical reliability, it employs a sophisticated multi-agent architecture combining Neuro-Symbolic AI, Temporal Reasoning, and Explainable AI (XAI).
 
 ---
